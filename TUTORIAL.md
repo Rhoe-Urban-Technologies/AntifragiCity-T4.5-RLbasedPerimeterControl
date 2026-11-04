@@ -405,8 +405,10 @@ post-update policy.
 
 The reference critic validation set consists of replay transitions. It is not
 a separate SUMO evaluation. Likewise, noisy training means are not noise-free
-policy evaluations. The core package intentionally excludes evaluation tools.
-**`--noise 0` still trains the learner**; it is not an evaluation-only switch.
+policy evaluations. For a noise-free evaluation, use
+`python -m shared_green_rl.evaluate --agent <run>/agent.pt`, which also runs
+fixed-time control on the same simulations (README, "Comparison with fixed-time
+control"). **`--noise 0` still trains the learner**; it is not an evaluation-only switch.
 
 ## 10. Resume training
 
@@ -513,12 +515,14 @@ time and retain the same demand, seed, duration and baseline definition.
 
 ## 12. File-by-file reading guide
 
-Only `train_parallel.py` is the training entry point. The other Python files
-are imported components; they are not separate commands to run in sequence.
+Only `train_parallel.py` is the training entry point, and `evaluate.py` the
+evaluation one. The other Python files are imported components; they are not
+separate commands to run in sequence.
 
 | File | Functions/classes and responsibilities |
 |---|---|
 | `shared_green_rl/train_parallel.py` | `main()` parses settings, creates workers, collects replay, performs central updates and logs results. `restore_training()` reloads learner/replay and finds the next episode index. `REFERENCE_FIELDS` defines extra reference-mode CSV columns. |
+| `shared_green_rl/evaluate.py` | `main()` runs fixed-time budgets and a trained agent (no noise, no learning) on the same demand and SUMO seeds in parallel. `run_one()` runs one simulation and records each cycle. `summarize()` averages over seeds and compares with the best fixed budget. |
 | `shared_green_rl/generating.py` | `generating_process()` loads a frozen checkpoint, sets independent noise RNG, runs one environment to completion, saves samples and individual metrics, and closes TraCI. |
 | `shared_green_rl/environment.py` | `Environment.__init__()` sets scaling, mapping, demand and SUMO access. `reset()` prepares copied inputs, launches SUMO and returns the initial state. `accumulation()` measures regional counts. `step()` applies one plan, advances 90 seconds and returns `(next_state, reward, done, info)`. `close()` shuts down the connection. |
 | `shared_green_rl/signals.py` | `Signal` stores one light's phase data. `SignalMapping.__init__()` loads the 17 lights and computes common bounds. `green_budget()` removes clearance from the cycle. `plan()` allocates the shared action into each light's phase durations. |
@@ -550,6 +554,6 @@ you need to understand input paths, region counts or output handling.
 | Training appears much slower than one baseline | One round runs several full simulations, and 50 rounds repeat that work 50 times. Compare wall times at the same number of simulations and concurrency. |
 | Actor loss changes but completion does not improve | Actor loss tracks the critic's predicted return, not measured TTS or completion. Use simulation metrics to judge traffic performance. |
 
-The core intentionally contains no plotting, evaluation, summarizing or testing
-scripts. This tutorial and the README are documentation; they do not change
+The core intentionally contains no plotting or summarizing scripts; the only
+evaluation tool is the fixed-time comparison (`evaluate.py`). This tutorial and the README are documentation; they do not change
 the training procedure or scenario inputs.

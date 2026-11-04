@@ -113,3 +113,9 @@
 /* the funding line at the foot of the sidebar (EU rules; the emblem file is still to be added) */
 [class*="AppShell-module-narrow"] .atc-funding { display: none; }
 .atc-funding { margin: 0; padding: 0 var(--rh-space-2); font-size: var(--rh-caption-size); line-height: var(--rh-caption-line); color: var(--rh-text-muted); }
+
+/* comparisons */
+.atc-budgets { display: grid; gap: var(--rh-space-3); margin: 0; padding: 0; list-style: none; }
+.atc-budgets li { display: flex; gap: var(--rh-space-2); align-items: flex-end; }
+.atc-budgets li > :first-child { flex: 1; min-width: 0; }
+.atc-strong { font-weight: var(--rh-weight-semibold); }

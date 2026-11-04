@@ -5,7 +5,7 @@ import logo from "@antifragicity/theme/assets/logo.svg";
 import logoWhite from "@antifragicity/theme/assets/logo-white.svg";
 import symbol from "@antifragicity/theme/assets/symbol.svg";
 import { Outlet, useLocation } from "react-router";
-import { Languages, ListChecks, MapPinned } from "lucide-react";
+import { Languages, ListChecks, MapPinned, Scale } from "lucide-react";
 import {
   AppShell,
   Badge,
@@ -103,6 +103,9 @@ export function Shell() {
               </SidebarItem>
               <SidebarItem href="/jobs" icon={ListChecks} isActive={is("/jobs")} badge={active || undefined} badgeLabel={t.nav.activeJobs(active)}>
                 {t.nav.jobs}
+              </SidebarItem>
+              <SidebarItem href="/comparisons" icon={Scale} isActive={is("/comparisons")}>
+                {t.nav.comparisons}
               </SidebarItem>
             </SidebarSection>
           </Sidebar>

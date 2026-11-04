@@ -1,12 +1,21 @@
-"""Training jobs: a spec saved on disk and the real trainer run as a local background process.
+"""Jobs: a spec saved on disk and the real trainer (or evaluator) run as a local background process.
 
-This is the stand-in for the SUMA orchestrator: the job spec (`JobCreate`) is the contract it will accept later,
-and the folder layout maps onto tables (training_jobs, training_rounds) when jobs move to PostgreSQL.
+Two kinds share one queue, so they never compete for the CPU:
 
-    outputs/jobs/<id>/job.json        the job record (status, spec, timings)
-    outputs/jobs/<id>/perimeter.json  the perimeter the trainer reads (--perimeter)
-    outputs/jobs/<id>/train.log       trainer and SUMO output
+- training: `shared_green_rl.train_parallel` for a perimeter;
+- comparison: `shared_green_rl.evaluate`, a trained agent against fixed-time control (D4.5, section 5.1) on the
+  same demand and SUMO seeds.
+
+This is the stand-in for the SUMA orchestrator: the specs (`JobCreate`, `ComparisonCreate`) are the contract it will
+accept later, and the folder layout maps onto tables (training_jobs, training_rounds, comparisons,
+comparison_runs) when jobs move to PostgreSQL.
+
+    outputs/jobs/<id>/job.json        the job record (kind, status, spec, timings)
+    outputs/jobs/<id>/perimeter.json  the perimeter the trainer or evaluator reads (--perimeter)
+    outputs/jobs/<id>/train.log       trainer (or evaluator) and SUMO output
     outputs/jobs/<id>/run/            the trainer's output folder (episodes.csv, agent.pt, ...)
+                                      or the evaluator's (runs/*.json, summary.json, ...)
+    outputs/jobs/<id>/agent.pt        comparisons: the agent as it was when the comparison was created
 
 Jobs run in their own process group, so they survive an API reload; a restarted API adopts running jobs by
 PID and settles their status from the trainer's output when they end.
@@ -19,15 +28,24 @@ from pathlib import Path
 import signal
 import subprocess
 import threading
+import shutil
 import uuid
 from typing import Literal
+
+import numpy as np
 
 from pydantic import BaseModel, Field, field_validator
 
 from atc_api import settings
 from atc_api.perimeter import LightOverride, PerimeterSpec
+from shared_green_rl.evaluate import fixed_label, summarize
 
 Status = Literal['queued', 'running', 'completed', 'failed', 'cancelled']
+Kind = Literal['training', 'comparison']
+
+
+def kind_of(job: dict) -> Kind:
+    return job.get('kind', 'training')  # jobs from before comparisons existed are training jobs
 
 
 class DemandProfile(BaseModel):
@@ -98,6 +116,34 @@ class JobCreate(BaseModel):
         return v
 
 
+class ComparisonCreate(BaseModel):
+    """Compare a training job's agent with fixed-time control. Unset fields follow the training job."""
+    name: str | None = Field(None, max_length=80)
+    demand_profile: str | None = None
+    #: constant B→A budgets in seconds; None = the low, midpoint and high of the job's action range (D4.5)
+    fixed_budgets: list[float] | None = Field(None, max_length=10)
+    include_agent: bool = True
+    sumo_seeds: list[int] = Field(default_factory=lambda: [42], min_length=1, max_length=10)
+    workers: int = Field(4, ge=1, le=64)
+
+    @field_validator('demand_profile')
+    @classmethod
+    def known_profile(cls, v: str | None) -> str | None:
+        if v is not None and v not in PROFILES:
+            raise ValueError(f'Unknown demand profile. Use one of: {", ".join(PROFILES)}.')
+        return v
+
+    @field_validator('fixed_budgets')
+    @classmethod
+    def distinct(cls, v: list[float] | None) -> list[float] | None:
+        return None if v is None else sorted(set(round(x, 2) for x in v))
+
+    @field_validator('sumo_seeds')
+    @classmethod
+    def distinct_seeds(cls, v: list[int]) -> list[int]:
+        return sorted(set(v))
+
+
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec='seconds')
 
@@ -146,17 +192,59 @@ class JobStore:
             _write_json(self.folder(job['_id']) / 'job.json', job)
         return job
 
-    def all(self) -> list[dict]:
+    def all(self, kind: Kind | None = None) -> list[dict]:
+        if not self.root.is_dir():  # deleted while the API runs (tests clean up)
+            return []
         jobs = [self.get(p.name) for p in self.root.iterdir() if (p / 'job.json').is_file()]
-        return sorted((j for j in jobs if j), key=lambda j: j['created_at'], reverse=True)
+        return sorted((j for j in jobs if j and (kind is None or kind_of(j) == kind)),
+                      key=lambda j: j['created_at'], reverse=True)
 
-    def create(self, spec: JobCreate, perimeter: PerimeterSpec, summary: dict) -> dict:
+    def _new(self) -> tuple[str, Path]:
         job_id = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S-') + uuid.uuid4().hex[:6]
         folder = self.folder(job_id)
         folder.mkdir(parents=True)
+        return job_id, folder
+
+    def create(self, spec: JobCreate, perimeter: PerimeterSpec, summary: dict) -> dict:
+        job_id, folder = self._new()
         _write_json(folder / 'perimeter.json', perimeter.model_dump())
-        job = dict(_id=job_id, name=spec.name, status='queued', created_at=now(), started_at=None,
+        job = dict(_id=job_id, kind='training', name=spec.name, status='queued', created_at=now(), started_at=None,
                    finished_at=None, spec=spec.model_dump(), perimeter=summary, pid=None, return_code=None,
+                   error=None, cancel_requested=False)
+        return self.save(job)
+
+    def agent_checkpoint(self, training_id: str) -> Path | None:
+        path = self.folder(training_id) / 'run' / 'agent.pt'
+        return path if path.is_file() else None
+
+    def create_comparison(self, training: dict, spec: ComparisonCreate) -> dict:
+        """A comparison for a training job. Raises ValueError with a message for the user."""
+        t = training['spec']['training']
+        low, high = training['perimeter']['action_bounds']
+        budgets = spec.fixed_budgets if spec.fixed_budgets is not None else [low, (low + high) / 2, high]
+        outside = [b for b in budgets if not low <= b <= high]
+        if outside:
+            raise ValueError(f'Fixed budgets must be within the action range {low:g}–{high:g} s '
+                             f'({", ".join(f"{b:g}" for b in outside)} s is not).')
+        checkpoint = self.agent_checkpoint(training['_id']) if spec.include_agent else None
+        if spec.include_agent and checkpoint is None:
+            raise ValueError('This training job has no trained agent yet (agent.pt is written after the first round).')
+        if not budgets and not spec.include_agent:
+            raise ValueError('Nothing to compare: add a fixed-time budget or include the trained agent.')
+        rounds = len(self.rounds(training['_id']))
+        profile = spec.demand_profile or training['spec']['demand_profile']
+        job_id, folder = self._new()
+        shutil.copy2(self.folder(training['_id']) / 'perimeter.json', folder / 'perimeter.json')
+        if checkpoint:
+            shutil.copy2(checkpoint, folder / 'agent.pt')  # a snapshot: training may still be running
+        controllers = [fixed_label(b) for b in budgets] + (['agent'] if checkpoint else [])
+        resolved = spec.model_dump() | dict(
+            demand_profile=profile, fixed_budgets=budgets, training_job_id=training['_id'],
+            training_job_name=training['name'], agent_rounds=rounds if checkpoint else None,
+            begin=t['begin'], duration=t['duration'], min_green=t['min_green'], controllers=controllers)
+        name = spec.name or f'{training["name"]} · {PROFILES[profile].name}'
+        job = dict(_id=job_id, kind='comparison', name=name, status='queued', created_at=now(), started_at=None,
+                   finished_at=None, spec=resolved, perimeter=training['perimeter'], pid=None, return_code=None,
                    error=None, cancel_requested=False)
         return self.save(job)
 
@@ -172,7 +260,50 @@ class JobStore:
             return [{k: float(row[k]) if row.get(k) not in (None, '') else None for k in keep}
                     for row in csv.DictReader(f)]
 
+    def comparison_runs(self, job_id: str) -> list[dict]:
+        """Finished simulations of a comparison (one per controller and seed), with their cycles."""
+        folder = self.folder(job_id) / 'run' / 'runs'
+        runs = []
+        for path in sorted(folder.glob('*.json')) if folder.is_dir() else []:
+            try:
+                runs.append(json.loads(path.read_text(encoding='utf-8')))
+            except (OSError, json.JSONDecodeError):
+                pass  # still being written
+        return runs
+
+    def comparison_results(self, job: dict) -> dict:
+        """The comparison table (mean over seeds, change against the best fixed budget) and mean cycles."""
+        controllers = job['spec']['controllers']
+        runs = self.comparison_runs(job['_id'])
+        done = [c for c in controllers if any(r['controller'] == c for r in runs)]
+        summary = summarize(runs, done) if runs else []
+        cycles = {}
+        for c in done:
+            mine = [r['cycles'] for r in runs if r['controller'] == c]
+            n = min(len(x) for x in mine)
+            cycles[c] = [dict(time=mine[0][i]['time'],
+                              **{k: float(np.mean([x[i][k] for x in mine]))
+                                 for k in ('ba_seconds', 'completed', 'tts', 'accumulation_a', 'accumulation_b')})
+                         for i in range(n)]
+        return dict(summary=summary, cycles=cycles,
+                    runs=[{k: r[k] for k in ('controller', 'sumo_seed', 'completed', 'tts', 'elapsed_seconds')}
+                          for r in runs])
+
+    def _comparison_progress(self, job: dict) -> dict:
+        spec = job['spec']
+        total = len(spec['controllers']) * len(spec['sumo_seeds'])
+        runs = self.comparison_runs(job['_id'])
+        times = [r['elapsed_seconds'] for r in runs]
+        eta = None
+        if times and job['status'] == 'running':
+            batches = -(-(total - len(runs)) // max(1, min(spec['workers'], total)))
+            eta = sum(times) / len(times) * batches
+        return dict(runs_done=len(runs), runs_total=total, fraction=len(runs) / total if total else 0,
+                    eta_seconds=eta)
+
     def progress(self, job: dict) -> dict:
+        if kind_of(job) == 'comparison':
+            return self._comparison_progress(job)
         rounds = self.rounds(job['_id'])
         total = job['spec']['training']['episodes']
         generators = job['spec']['training']['generators']
@@ -199,7 +330,24 @@ class JobStore:
 
     # running ---------------------------------------------------------------------------------------------------
 
+    def _comparison_command(self, job: dict) -> list[str]:
+        spec, folder = job['spec'], self.folder(job['_id'])
+        cmd = [settings.PYTHON, '-B', '-m', 'shared_green_rl.evaluate',
+               '--fixed', *[f'{b:g}' for b in spec['fixed_budgets']],
+               '--sumo-seeds', *[str(s) for s in spec['sumo_seeds']], '--workers', str(spec['workers']),
+               '--begin', str(spec['begin']), '--duration', str(spec['duration']), '--min-green', str(spec['min_green']),
+               '--state-scale', '1000', '--derivative-scale', '100']
+        if spec['include_agent']:
+            cmd += ['--agent', str(folder / 'agent.pt')]
+        profile = PROFILES[spec['demand_profile']]
+        if profile.option:
+            cmd += [profile.option, str(settings.ROOT / profile.path)]
+        cmd += ['--perimeter', str(folder / 'perimeter.json'), '--output', str(folder / 'run')]
+        return cmd
+
     def command(self, job: dict) -> list[str]:
+        if kind_of(job) == 'comparison':
+            return self._comparison_command(job)
         t = job['spec']['training']
         folder = self.folder(job['_id'])
         cmd = [settings.PYTHON, '-B', '-m', 'shared_green_rl.train_parallel', '--training-mode', 'reference']
@@ -225,7 +373,7 @@ class JobStore:
                                        stdin=subprocess.DEVNULL, start_new_session=True,
                                        env={**os.environ, 'PYTHONUNBUFFERED': '1'})
         except OSError as e:
-            job.update(status='failed', finished_at=now(), error=f'Could not start the trainer: {e}')
+            job.update(status='failed', finished_at=now(), error=f'Could not start the process: {e}')
             self.save(job)
             return
         finally:
@@ -246,18 +394,23 @@ class JobStore:
         return not _alive(job.get('pid'))  # adopted from an earlier API process
 
     def _settle(self, job: dict) -> None:
-        rounds = len(self.rounds(job['_id']))
-        total = job['spec']['training']['episodes']
+        if kind_of(job) == 'comparison':
+            p = self._comparison_progress(job)
+            done, total, unit = p['runs_done'], p['runs_total'], 'simulations'
+            finished = (self.folder(job['_id']) / 'run' / 'summary.json').is_file()
+        else:
+            done, total, unit = len(self.rounds(job['_id'])), job['spec']['training']['episodes'], 'rounds'
+            finished = done >= total
         if job.get('cancel_requested'):
             job['status'] = 'cancelled'
-        elif rounds >= total and job.get('return_code') in (0, None):
+        elif finished and job.get('return_code') in (0, None):
             job['status'] = 'completed'
         else:
             tail = [l for l in self.log_tail(job['_id'], 40) if l.strip()]
             errors = [l for l in tail if 'Error' in l or 'error:' in l]
             job['status'] = 'failed'
-            job['error'] = (errors[-1] if errors else tail[-1] if tail else 'The trainer stopped.') + \
-                f' (after {rounds} of {total} rounds; see the log)'
+            job['error'] = (errors[-1] if errors else tail[-1] if tail else 'The process stopped.') + \
+                f' (after {done} of {total} {unit}; see the log)'
         job['finished_at'] = now()
         self.save(job)
 
@@ -307,6 +460,9 @@ class JobStore:
 def public(job: dict, store: JobStore) -> dict:
     """The job as the API returns it."""
     out = {k: v for k, v in job.items() if k not in ('pid', 'cancel_requested', 'command')}
+    out['kind'] = kind_of(job)
     out['progress'] = store.progress(job)
     out['demand_profile'] = PROFILES[job['spec']['demand_profile']].name
+    if out['kind'] == 'training':
+        out['has_agent'] = store.agent_checkpoint(job['_id']) is not None
     return out

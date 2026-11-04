@@ -16,6 +16,9 @@ for the existing experiments.
 - `shared_green_rl/environment.py`: states, completion reward and cycle stepping.
 - `shared_green_rl/signals.py`: shared green allocation across the 17 lights.
 - `shared_green_rl/sumo_runtime.py`: configuration copies and accumulation counts.
+- `shared_green_rl/evaluate.py`: comparison of a trained agent with fixed-time
+  control on the same simulations (D4.5, section 5.1). See
+  [Comparison with fixed-time control](#comparison-with-fixed-time-control).
 - `LuSTScenario-master/`: only the default configuration's required inputs,
   region definitions, boundary-light IDs and upstream license.
 - `scenario/`: the three experimental demand profiles used in training;
@@ -23,14 +26,15 @@ for the existing experiments.
 
 - `atc_api/`: FastAPI back end for choosing the perimeter and running training
   jobs. It serves the network geometry, analyzes a Region A selection, and queues
-  local training jobs. See [Perimeter selection UI](#perimeter-selection-ui).
+  local training jobs and fixed-time comparisons. See [Perimeter selection UI](#perimeter-selection-ui).
 - `ui/`: the React dashboard for it, built from the rhoe-ui `app-dashboard`
   template with the AntifragiCity theme from antifragicity-ui (checked out next
   to this repository). See [ui/README.md](ui/README.md).
-- `tests/`: pytest for the perimeter builder and the API.
+- `tests/`: pytest for the perimeter builder, the API and the comparisons.
 
-There are no plotting, summarizing, evaluation or demand-generation scripts,
-saved outputs or checkpoints in this package.
+There are no plotting, summarizing or demand-generation scripts, saved outputs
+or checkpoints in this package. The one evaluation tool is the fixed-time
+comparison.
 Training still writes its normal metrics and checkpoints when run.
 
 The training loop, rollout worker, signal allocation and agent learning methods
@@ -147,3 +151,44 @@ Jobs started from the UI run the trainer as a local background process, one at a
 time by default (`ATC_MAX_RUNNING_JOBS`). Everything is kept under
 `outputs/jobs/<id>/`: `job.json`, `perimeter.json`, `train.log` and the trainer's
 `run/` folder. A restarted API picks up running jobs again by PID.
+
+## Comparison with fixed-time control
+
+`shared_green_rl.evaluate` reproduces the comparison in D4.5 (section 5.1,
+Tables 2-4). Fixed-time control uses the same phase-separated lights and signal
+mapping as the agent, with a constant B→A green budget every 90-second cycle.
+By default the budgets are the lower bound, midpoint and upper bound of the
+action range (10, 32.5 and 55 s for the reference perimeter). The trained agent
+runs its deterministic policy: no exploration noise and no learning. Every
+controller gets the same demand, SUMO seeds and time window, and the command
+reports completed trips and total time spent (vehicle-seconds), plus their
+change against the best fixed budget.
+
+```sh
+python -B -m shared_green_rl.evaluate --agent outputs/reference_training/agent.pt \
+    --extra-routes scenario/aa_plus3000/extra_aa.rou.xml --sumo-seeds 42 \
+    --workers 4 --output outputs/compare_aa3000
+```
+
+Options: `--fixed 10 32.5 55` for other budgets (an empty `--fixed` runs the
+agent alone), no `--agent` for fixed time only, several `--sumo-seeds` for a
+mean, and `--perimeter`, `--min-green`, `--begin`, `--duration` as in training.
+One one-hour simulation takes about 4-5 minutes. The output folder has
+`results.csv` (one row per run), `summary.json` (mean per controller) and
+`runs/*.json` with one row per cycle (B→A green, completions, TTS, vehicles in A
+and B).
+
+The table in D4.5 doesn't say how the RL rows were measured (a noise-free run
+of the final agent, or a training round's rollouts with exploration noise).
+This command does the former. Compare results from the same machine and SUMO
+version: a fixed 32.5 s run of Scenario 1 here (SUMO 1.26) gave 21,866
+completed trips and 18,265,994 veh·s against D4.5's 21,928 and 18,286,670, and
+the 10 s run differs by about 1%, which is more than the margins in the tables.
+
+In the UI, a training job's page has **Compare with fixed time**. It copies the
+job's current `agent.pt`, queues the comparison with the training jobs, and
+shows the table, the change against the best fixed budget, the B→A green per
+cycle and the vehicles in Region A. All comparisons are under **Fixed-time
+comparisons**. The API is `POST /api/training-jobs/{id}/comparisons`,
+`GET /api/comparisons[?training_job=]`, `GET /api/comparisons/{id}` (with
+results), `/log` and `/cancel`.

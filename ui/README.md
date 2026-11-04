@@ -46,7 +46,9 @@ npm run build          # dist/ (deploy as a single-page app; serve /api from the
 |---|---|---|
 | `/` | Perimeter | The LuST road network on the map, with Region A in teal. Set Region A by drawing a polygon (click points, double-click or Enter to close), by using the current map view, or with the reference region. Every change calls `POST /api/perimeter/analyze`, which returns the boundary lights (shape and colour by status), the crossings they control, the shared action range and any problems. Select a light, on the map or in the list view, to leave it out or change the role of a green phase. **Set up training** opens the job settings (defaults are the reference experiment's) and submits `POST /api/training-jobs`. `?from=<job id>` loads a job's selection |
 | `/jobs` | Training jobs | All jobs with status and progress, polled while any is active. The sidebar badge counts running and queued jobs |
-| `/jobs/:id` | Training job | `RunPanel` (queued → running → completed / failed / cancelled, with cancel), the trainer's log, KPIs, completed trips and learner losses per round (each with a table and CSV), and the perimeter. **Use as a starting point** reopens the selection on the map |
+| `/comparisons` | Fixed-time comparisons | Every comparison, with the agent's change in completed trips and total time spent against the best fixed budget |
+| `/comparisons/:id` | Comparison | The D4.5-style table (completed trips, total time spent, change against the best fixed budget), the change as bars, the B→A green per cycle and the vehicles in Region A for each controller, the simulations with the evaluator's log, and the settings. **Compare again** reopens the settings on the training job |
+| `/jobs/:id` | Training job | `RunPanel` (queued → running → completed / failed / cancelled, with cancel), the trainer's log, KPIs, completed trips and learner losses per round (each with a table and CSV), and the perimeter. **Use as a starting point** reopens the selection on the map. **Compare with fixed time** (`?compare=1`) runs the trained agent and fixed-time budgets on the same simulations; the job's comparisons are listed below |
 
 ## Structure
 
@@ -59,6 +61,10 @@ src/routes/perimeter/
   LightPanel.tsx    one light: include it, and the role of each green phase
   TrainingDrawer.tsx the job's settings and submission
 src/routes/jobs/    JobsList, JobDetail
+src/routes/comparisons/
+  ComparisonDrawer.tsx  the comparison's settings (budgets, agent, seeds), from a training job
+  ComparisonDetail.tsx  results, charts, run and log
+  ComparisonsList.tsx, ComparisonsTable.tsx, format.ts
 src/i18n/           en.ts, el.ts (the app's strings; @rhoe/ui translates its own)
 ```
 

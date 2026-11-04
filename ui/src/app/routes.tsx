@@ -7,6 +7,7 @@ import { useLocale } from "../i18n";
 import { Root, RouteError } from "./Root";
 import { Shell } from "./Shell";
 import { JobsList } from "../routes/jobs/JobsList";
+import { ComparisonsList } from "../routes/comparisons/ComparisonsList";
 import { NotFoundPage } from "../routes/errors/ErrorRoutes";
 
 /** A lazy route: the page's chunk, loaded on the first visit. */
@@ -33,6 +34,8 @@ export const routes: RouteObject[] = [
           { index: true, lazy: page(async () => (await import("../routes/perimeter/PerimeterPage")).PerimeterPage) },
           { path: "jobs", element: <JobsList /> },
           { path: "jobs/:id", lazy: page(async () => (await import("../routes/jobs/JobDetail")).JobDetail) },
+          { path: "comparisons", element: <ComparisonsList /> },
+          { path: "comparisons/:id", lazy: page(async () => (await import("../routes/comparisons/ComparisonDetail")).ComparisonDetail) },
           { path: "*", element: <NotFoundPage /> },
         ],
       },

@@ -1,11 +1,33 @@
 // One training job: RunPanel with live progress and the trainer's log, the per-round metrics as charts, and the
-// perimeter it trains. Polls while queued or running.
-import { useParams } from "react-router";
-import { Copy } from "lucide-react";
-import { Card, CardHeader, ChartFrame, ErrorPage, ErrorState, Icon, KpiTile, LineChart, LinkButton, LogViewer, PageHeader, RunPanel, Skeleton, StatusPill, formatDuration, useConfirm, type LogLevel } from "@rhoe/ui";
+// perimeter it trains, and its comparisons with fixed-time control. Polls while queued or running.
+// `?compare=1` opens the comparison settings (the comparison page's "Compare again").
+import { useParams, useSearchParams } from "react-router";
+import { Copy, Scale } from "lucide-react";
+import {
+  Button,
+  Card,
+  CardHeader,
+  ChartFrame,
+  ErrorPage,
+  ErrorState,
+  Icon,
+  KpiTile,
+  LineChart,
+  LinkButton,
+  LogViewer,
+  PageHeader,
+  RunPanel,
+  Skeleton,
+  StatusPill,
+  formatDuration,
+  useConfirm,
+  type LogLevel,
+} from "@rhoe/ui";
 import { useApiMutation } from "@rhoe/data";
 import { isNotFound } from "../../api/client";
-import { jobKeys, jobsApi, useJob, useJobLog } from "../../api/queries";
+import { jobKeys, jobsApi, useComparisons, useJob, useJobLog } from "../../api/queries";
+import { ComparisonDrawer } from "../comparisons/ComparisonDrawer";
+import { ComparisonsTable } from "../comparisons/ComparisonsTable";
 import type { TrainingRound } from "../../api/types";
 import { useLocale } from "../../i18n";
 import { usePage } from "../../app/page";
@@ -21,6 +43,18 @@ export function JobDetail() {
   const active = j?.status === "queued" || j?.status === "running";
   const log = useJobLog(id, !!active);
   const confirm = useConfirm();
+  const comparisons = useComparisons(id);
+  const [search, setSearch] = useSearchParams();
+  const comparing = search.get("compare") === "1";
+  const setComparing = (open: boolean) =>
+    setSearch(
+      (s) => {
+        if (open) s.set("compare", "1");
+        else s.delete("compare");
+        return s;
+      },
+      { replace: true },
+    );
   usePage(j?.name ?? t.job.title, [{ label: t.jobs.title, href: "/jobs" }, { label: j?.name ?? t.job.title }]);
 
   const cancel = useApiMutation({ mutationFn: jobsApi.cancel, invalidate: () => [jobKeys.all] });
@@ -53,9 +87,14 @@ export function JobDetail() {
         description={t.job.description(j.demand_profile, j.perimeter.signals.length, j.perimeter.region_edge_count)}
         meta={<StatusPill status={j.status} />}
         actions={
-          <LinkButton href={`/?from=${j._id}`} iconStart={<Icon icon={Copy} />}>
-            {t.job.reuse}
-          </LinkButton>
+          <>
+            <LinkButton href={`/?from=${j._id}`} iconStart={<Icon icon={Copy} />}>
+              {t.job.reuse}
+            </LinkButton>
+            <Button variant="primary" iconStart={<Icon icon={Scale} />} onPress={() => setComparing(true)}>
+              {t.job.compare}
+            </Button>
+          </>
         }
       />
 
@@ -138,6 +177,18 @@ export function JobDetail() {
           </Card>
         </div>
       </div>
+
+      <section className="app-stack atc-gap-4" aria-labelledby="atc-comparisons">
+        <div>
+          <h2 id="atc-comparisons" className="app-h2">
+            {t.job.comparisonsTitle}
+          </h2>
+          <p className="app-muted">{t.job.comparisonsDescription}</p>
+        </div>
+        <ComparisonsTable rows={comparisons.data?.items ?? []} isLoading={comparisons.isLoading} emptyState={<p className="app-muted">{t.job.noComparisons}</p>} />
+      </section>
+
+      {comparing && <ComparisonDrawer isOpen onOpenChange={setComparing} job={j} />}
     </div>
   );
 }

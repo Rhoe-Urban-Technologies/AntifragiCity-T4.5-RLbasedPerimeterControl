@@ -4,6 +4,8 @@ import { createKeys } from "@rhoe/data";
 import { api } from "./client";
 import type {
   Analysis,
+  Comparison,
+  ComparisonCreate,
   AnalyzeRequest,
   DemandProfile,
   EdgeCollection,
@@ -17,6 +19,7 @@ import type {
 export const networkKeys = createKeys("network");
 export const perimeterKeys = createKeys("perimeter");
 export const jobKeys = createKeys("training-jobs");
+export const comparisonKeys = createKeys("comparisons");
 
 const ACTIVE = new Set(["queued", "running"]);
 
@@ -39,6 +42,15 @@ export const jobsApi = {
   log: (id: string, signal?: AbortSignal) => api.get<{ lines: string[] }>(`/training-jobs/${id}/log`, { query: { lines: 400 }, signal }),
   create: (body: JobCreate) => api.post<TrainingJob>("/training-jobs", { body }),
   cancel: (id: string) => api.post<TrainingJob>(`/training-jobs/${id}/cancel`),
+};
+
+export const comparisonsApi = {
+  list: (trainingJob?: string, signal?: AbortSignal) =>
+    api.get<ListPage<Comparison>>("/comparisons", { query: { page_size: 100, ...(trainingJob ? { training_job: trainingJob } : {}) }, signal }),
+  get: (id: string, signal?: AbortSignal) => api.get<Comparison>(`/comparisons/${id}`, { signal }),
+  log: (id: string, signal?: AbortSignal) => api.get<{ lines: string[] }>(`/comparisons/${id}/log`, { query: { lines: 400 }, signal }),
+  create: ({ jobId, body }: { jobId: string; body: ComparisonCreate }) => api.post<Comparison>(`/training-jobs/${jobId}/comparisons`, { body }),
+  cancel: (id: string) => api.post<Comparison>(`/comparisons/${id}/cancel`),
 };
 
 const forever = { staleTime: Infinity, gcTime: Infinity } as const;
@@ -76,3 +88,21 @@ export const useJob = (id: string) =>
 
 export const useJobLog = (id: string, active: boolean) =>
   useQuery({ queryKey: [...jobKeys.detail(id), "log"], queryFn: ({ signal }) => jobsApi.log(id, signal), refetchInterval: active ? 3000 : false });
+
+/** All comparisons, or a training job's. Polls every 5 s while any is queued or running. */
+export const useComparisons = (trainingJob?: string) =>
+  useQuery({
+    queryKey: comparisonKeys.list({ trainingJob: trainingJob ?? null }),
+    queryFn: ({ signal }) => comparisonsApi.list(trainingJob, signal),
+    refetchInterval: (q) => (q.state.data?.items.some((c) => ACTIVE.has(c.status)) ? 5000 : false),
+  });
+
+export const useComparison = (id: string) =>
+  useQuery({
+    queryKey: comparisonKeys.detail(id),
+    queryFn: ({ signal }) => comparisonsApi.get(id, signal),
+    refetchInterval: (q) => (q.state.data && ACTIVE.has(q.state.data.status) ? 3000 : false),
+  });
+
+export const useComparisonLog = (id: string, active: boolean) =>
+  useQuery({ queryKey: [...comparisonKeys.detail(id), "log"], queryFn: ({ signal }) => comparisonsApi.log(id, signal), refetchInterval: active ? 3000 : false });

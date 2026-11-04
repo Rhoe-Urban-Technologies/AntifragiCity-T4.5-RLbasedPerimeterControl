@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from shapely.geometry import shape
 
 from atc_api import settings
-from atc_api.jobs import DEMAND_PROFILES, JobCreate, JobStore, public
+from atc_api.jobs import DEMAND_PROFILES, ComparisonCreate, JobCreate, JobStore, kind_of, public
 from atc_api.network import Network
 from atc_api.perimeter import Analysis, LightOverride, analyze
 
@@ -152,15 +152,15 @@ def create_job(spec: JobCreate):
 
 @app.get('/api/training-jobs')
 def list_jobs(status: str | None = None, page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)):
-    jobs = [j for j in store.all() if status is None or j['status'] == status]
+    jobs = [j for j in store.all('training') if status is None or j['status'] == status]
     items = [public(j, store) for j in jobs[(page - 1) * page_size: page * page_size]]
     return {'items': items, 'total': len(jobs)}
 
 
-def _job_or_404(job_id: str) -> dict:
+def _job_or_404(job_id: str, kind: str = 'training') -> dict:
     job = store.get(job_id)
-    if job is None:
-        raise HTTPException(404, 'Training job not found')
+    if job is None or kind_of(job) != kind:
+        raise HTTPException(404, 'Training job not found' if kind == 'training' else 'Comparison not found')
     return job
 
 
@@ -187,4 +187,47 @@ def cancel_job(job_id: str):
     job = _job_or_404(job_id)
     if job['status'] not in ('queued', 'running'):
         raise HTTPException(409, detail={'code': 'not-active', 'message': f'The job is already {job["status"]}.'})
+    return public(store.cancel(job_id), store)
+
+
+# comparisons with fixed-time control -------------------------------------------------------------------------
+
+@app.post('/api/training-jobs/{job_id}/comparisons', status_code=201)
+def create_comparison(job_id: str, spec: ComparisonCreate):
+    """Run the job's agent (as it is now) and fixed-time budgets on the same demand and seeds (D4.5, 5.1)."""
+    training = _job_or_404(job_id)
+    try:
+        job = store.create_comparison(training, spec)
+    except ValueError as e:
+        raise HTTPException(422, detail={'code': 'invalid-comparison', 'message': str(e)})
+    store.tick()
+    return public(store.get(job['_id']), store)
+
+
+@app.get('/api/comparisons')
+def list_comparisons(training_job: str | None = None, page: int = Query(1, ge=1),
+                     page_size: int = Query(20, ge=1, le=100)):
+    jobs = [j for j in store.all('comparison') if training_job is None or j['spec']['training_job_id'] == training_job]
+    items = [public(j, store) | {'results': store.comparison_results(j)['summary']}
+             for j in jobs[(page - 1) * page_size: page * page_size]]
+    return {'items': items, 'total': len(jobs)}
+
+
+@app.get('/api/comparisons/{job_id}')
+def get_comparison(job_id: str):
+    job = _job_or_404(job_id, 'comparison')
+    return public(job, store) | {'results': store.comparison_results(job)}
+
+
+@app.get('/api/comparisons/{job_id}/log')
+def get_comparison_log(job_id: str, lines: int = Query(200, ge=1, le=2000)):
+    _job_or_404(job_id, 'comparison')
+    return {'lines': store.log_tail(job_id, lines)}
+
+
+@app.post('/api/comparisons/{job_id}/cancel')
+def cancel_comparison(job_id: str):
+    job = _job_or_404(job_id, 'comparison')
+    if job['status'] not in ('queued', 'running'):
+        raise HTTPException(409, detail={'code': 'not-active', 'message': f'The comparison is already {job["status"]}.'})
     return public(store.cancel(job_id), store)
