@@ -12,7 +12,7 @@ import torch
 from ddpg_agent import DDPG
 from shared_green_rl.environment import Environment
 from shared_green_rl.generating import generating_process
-from shared_green_rl.signals import SignalMapping
+from shared_green_rl.signals import SignalMapping, load_perimeter
 from shared_green_rl.sumo_runtime import write_json
 
 
@@ -64,6 +64,7 @@ def main():
     parser.add_argument('--sumo', default='sumo')
     parser.add_argument('--extra-routes', help='Supplemental route XML appended to the original demand')
     parser.add_argument('--route-files', help='Complete replacement demand XML; do not combine with --extra-routes')
+    parser.add_argument('--perimeter', help='Perimeter JSON (Region A edges, lights and phase roles); default: reference files')
     parser.add_argument('--output', type=Path, default=Path(__file__).parent / 'outputs' /
                         datetime.now().strftime('parallel_%Y%m%d_%H%M%S'))
     args = parser.parse_args()
@@ -80,6 +81,7 @@ def main():
                      if k not in ('episodes', 'output', 'resume')}
         inherited.setdefault('extra_routes', None)
         inherited.setdefault('route_files', None)
+        inherited.setdefault('perimeter', None)
         inherited.setdefault('training_mode', 'legacy')
         # Older checkpoints/replay used the accumulation divisor for every feature.
         inherited.setdefault('derivative_scale', inherited['state_scale'])
@@ -106,7 +108,8 @@ def main():
         parser.error('Use duration divisible by 90, positive scale and nonnegative noise')
     # torch.set_num_threads(1)
     output = args.output.resolve()
-    mapping = SignalMapping(min_green=args.min_green)
+    perimeter = load_perimeter(args.perimeter) if args.perimeter else None
+    mapping = SignalMapping(min_green=args.min_green, perimeter=perimeter)
     if args.resume:
         agent, start_episode = restore_training(args.resume)
     else:
@@ -116,7 +119,10 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     env_options = dict(duration=args.duration, begin=args.begin, scale=args.state_scale,
                        min_green=args.min_green, sumo=args.sumo, extra_routes=args.extra_routes,
-                       derivative_scale=args.derivative_scale, route_files=args.route_files)
+                       derivative_scale=args.derivative_scale, route_files=args.route_files,
+                       perimeter=str(Path(args.perimeter).resolve()) if args.perimeter else None)
+    if perimeter is not None:
+        write_json(output / 'perimeter.json', perimeter)  # the exact perimeter this run used
     write_json(output / 'settings.json', dict(
         arguments={k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
         start_episode=start_episode,
@@ -127,6 +133,7 @@ def main():
         action='shared total B-to-A green seconds per light',
         reward='completed_trips / control_interval', reward_units='vehicles/second', critic_action_normalization='[-1, 1]',
         tts_units='vehicle-seconds',
+        signals=[s.tls_id for s in mapping.signals],
         workflow='frozen-policy parallel rollouts then central replay updates'))
     fields = ['episode', 'generators', 'transitions', 'mean_reward', 'mean_tts', 'mean_completed', 'mean_completion_rate',
               'updates', 'actor_loss', 'critic_loss', 'collection_seconds',

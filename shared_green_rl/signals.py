@@ -19,24 +19,46 @@ class Signal:
     ab: list[int]
 
 
+def load_perimeter(path):
+    """Read a perimeter file: Region A edges and, per light, which phase indices are B-to-A and A-to-B.
+
+    Green phases listed in neither keep their stored durations, like clearance phases.
+    """
+    data = json.loads(Path(path).read_text(encoding='utf-8'))
+    if not data.get('region_a_edges') or not data.get('signals'):
+        raise ValueError(f'Perimeter needs region_a_edges and signals: {path}')
+    return data
+
+
 class SignalMapping:
-    def __init__(self, min_green=5):
+    def __init__(self, min_green=5, perimeter=None):
+        """Without a perimeter: the 17 reference lights and the first-green/SPECIAL rule."""
         self.min_green = math.ceil(min_green)
-        ids = json.loads((SCENARIO / 'boundary_intersections.json').read_text())['intersections']
         net = ET.parse(NETWORK)
         self.signals = []
-        tll = net.findall('tlLogic')
-        for tls in ids:
-            for t in tll:
-                if t.get('id') == tls:
-                    program = t
-                    break
-            phases = program.findall('phase')
+        programs = {}
+        for t in net.findall('tlLogic'):
+            programs.setdefault(t.get('id'), t)  # the first program per light, as before
+        if perimeter is None:
+            ids = json.loads((SCENARIO / 'boundary_intersections.json').read_text())['intersections']
+            roles = {tls: None for tls in ids}
+        else:
+            roles = {s['id']: (list(s['ba_phases']), list(s['ab_phases'])) for s in perimeter['signals']}
+        for tls, role in roles.items():
+            if tls not in programs:
+                raise ValueError(f'Traffic light {tls} is not in the network')
+            phases = programs[tls].findall('phase')
             states = [p.get('state') for p in phases]
             durations = [float(p.get('duration')) for p in phases]
-            green_idx = [i for i, state in enumerate(states) if 'G' in state]
-            split = 2 if tls in SPECIAL else 1
-            self.signals.append(Signal(tls, states, durations, green_idx[:split], green_idx[split:]))
+            if role is None:
+                green_idx = [i for i, state in enumerate(states) if 'G' in state]
+                split = 2 if tls in SPECIAL else 1
+                ba, ab = green_idx[:split], green_idx[split:]
+            else:
+                ba, ab = role
+                if not ba or not ab or set(ba) & set(ab) or not set(ba + ab) <= set(range(len(states))):
+                    raise ValueError(f'Light {tls} needs distinct, existing B-to-A and A-to-B phases')
+            self.signals.append(Signal(tls, states, durations, ba, ab))
         # Shared B-to-A budget bounds preserve every phase's minimum green.
         self.low = max(len(s.ba) * self.min_green for s in self.signals)
         self.high = min(self.green_budget(s) - len(s.ab) * self.min_green for s in self.signals)

@@ -4,7 +4,7 @@ import shutil
 import xml.etree.ElementTree as ET
 import numpy as np
 from shared_green_rl.sumo_runtime import SCENARIO, load_regions, prepare_config, load_traci, measure_accumulation
-from shared_green_rl.signals import NETWORK, SignalMapping
+from shared_green_rl.signals import NETWORK, SignalMapping, load_perimeter
 
 
 class Environment:
@@ -12,8 +12,10 @@ class Environment:
     features = ['n_A', 'n_B', 'dn_A', 'dn_B', 'd2n_A', 'd2n_B', 'elapsed_fraction']
 
     def __init__(self, begin=28800, duration=3600, min_green=5, scale=1000, sumo='sumo', extra_routes=None,
-                 derivative_scale=100, route_files=None):
-        self.mapping = SignalMapping(min_green)
+                 derivative_scale=100, route_files=None, perimeter=None):
+        # perimeter: path to a perimeter JSON (Region A edges + light phase roles); None = reference files.
+        self.perimeter = load_perimeter(perimeter) if perimeter else None
+        self.mapping = SignalMapping(min_green, self.perimeter)
         self.begin, self.duration = begin, duration
         self.scale = np.array([scale, scale, derivative_scale, derivative_scale,
                                derivative_scale, derivative_scale, duration], dtype=np.float32)
@@ -54,7 +56,9 @@ class Environment:
                 if light.get('id') in {s.tls_id for s in self.mapping.signals}:
                     tree.getroot().remove(light)
             tree.write(name, encoding='utf-8', xml_declaration=True)
-        self.edges, self.region_a = load_regions(NETWORK, SCENARIO / 'Region_A.txt')
+        self.edges, self.region_a = load_regions(
+            NETWORK, SCENARIO / 'Region_A.txt',
+            self.perimeter['region_a_edges'] if self.perimeter else None)
         self.traci.start([self.binary, '-c', str(generated), '--begin', str(self.begin),
             '--end', str(self.begin+self.duration), '--seed', str(seed), '--no-step-log', 'true'])
         self.running = True
