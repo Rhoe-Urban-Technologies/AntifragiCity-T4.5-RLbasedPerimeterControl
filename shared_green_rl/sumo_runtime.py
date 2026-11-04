@@ -53,12 +53,16 @@ def load_traci(binary):
     return traci
 
 
-def load_regions(network, region):
+def load_regions(network, region, region_a_edges=None):
+    """External edges and Region A: from the region file, or the given edge ids (a perimeter)."""
     net = ET.parse(network).getroot()
     edges = {e.get('id') for e in net.findall('edge') if e.get('function') != 'internal'}
-    region_a = {line.strip().split(':', 1)[1]
-                for line in region.read_text(encoding='utf-8-sig').splitlines()
-                if line.strip().startswith('edge:')}
+    if region_a_edges is not None:
+        region_a = set(region_a_edges)
+    else:
+        region_a = {line.strip().split(':', 1)[1]
+                    for line in region.read_text(encoding='utf-8-sig').splitlines()
+                    if line.strip().startswith('edge:')}
     if not region_a or region_a - edges:
         raise ValueError('Region A contains missing or unknown edges')
     return edges, region_a
