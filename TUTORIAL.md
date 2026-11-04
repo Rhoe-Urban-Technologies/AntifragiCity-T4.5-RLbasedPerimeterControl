@@ -454,6 +454,7 @@ For a resumed run, saved experiment settings replace most defaults.
 | `--sumo` | `sumo` | SUMO executable name or path; use headless SUMO on a server |
 | `--extra-routes` | None | Append one supplemental demand XML |
 | `--route-files` | None | Replace demand with one complete XML; mutually exclusive with `--extra-routes` |
+| `--perimeter` | None | Perimeter JSON (Region A edges, lights, B→A/A→B phase indices); default: `Region_A.txt`, `boundary_intersections.json` and the `SPECIAL` rule. Written by `atc_api`; see the README |
 | `--output` | Timestamped folder under `shared_green_rl/outputs/` | New output directory; must not already exist |
 | `--resume` | None | Completed training folder from which to restore settings, learner and replay |
 

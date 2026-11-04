@@ -21,8 +21,16 @@ for the existing experiments.
 - `scenario/`: the three experimental demand profiles used in training;
   see [profile selection and commands](scenario/README.md).
 
-There are no plotting, testing, summarizing, evaluation or demand-generation
-scripts, saved outputs or checkpoints in this package.
+- `atc_api/`: FastAPI back end for choosing the perimeter and running training
+  jobs. It serves the network geometry, analyzes a Region A selection, and queues
+  local training jobs. See [Perimeter selection UI](#perimeter-selection-ui).
+- `ui/`: the React dashboard for it, built from the rhoe-ui `app-dashboard`
+  template with the AntifragiCity theme from antifragicity-ui (checked out next
+  to this repository). See [ui/README.md](ui/README.md).
+- `tests/`: pytest for the perimeter builder and the API.
+
+There are no plotting, summarizing, evaluation or demand-generation scripts,
+saved outputs or checkpoints in this package.
 Training still writes its normal metrics and checkpoints when run.
 
 The training loop, rollout worker, signal allocation and agent learning methods
@@ -106,3 +114,36 @@ stopping, takes two actor steps, and updates target networks every five rounds.
 `rollout_agent.pt` is the frozen policy that produced those rollouts; the root
 `agent.pt` is saved after learning. Resume also requires `replay_buffer.json`
 and `settings.json`. Outputs should remain outside the scenario directory.
+
+## Perimeter selection UI
+
+The trainer takes `--perimeter perimeter.json` to train on a Region A and set of
+boundary lights other than the reference ones. Without it, training uses
+`Region_A.txt`, `boundary_intersections.json` and the first-green/`SPECIAL` rule,
+exactly as before.
+
+```json
+{"version": 1, "network": "lust", "region_a_edges": ["-30944", "..."],
+ "signals": [{"id": "-16078", "ba_phases": [0], "ab_phases": [2, 4]}]}
+```
+
+`atc_api` builds this file from a selection. A light is on the perimeter when it
+controls a movement that crosses the A/B boundary. Each green phase (uppercase
+`G`) is classified from the movements it gives green to: B→A, A→B, both
+("mixed": keeps its fixed duration), or neither. For the reference Region A this
+gives the same 17 lights and the same phase split as the manual rule
+(`tests/test_perimeter.py`). Other regions often have mixed phases, because only
+the 17 reference lights were separated by hand in `lust_phase_separation.net.xml`.
+The UI marks such lights as partly controllable or not controllable.
+
+```sh
+python -m pip install -r requirements.txt -r requirements-api.txt
+uvicorn atc_api.main:app --port 8000        # from this directory, with SUMO on PATH
+cd ui && npx npm@11 install && npm run dev  # http://localhost:5180; needs ../antifragicity-ui (ui/README.md)
+python -m pytest tests                      # perimeter and API tests
+```
+
+Jobs started from the UI run the trainer as a local background process, one at a
+time by default (`ATC_MAX_RUNNING_JOBS`). Everything is kept under
+`outputs/jobs/<id>/`: `job.json`, `perimeter.json`, `train.log` and the trainer's
+`run/` folder. A restarted API picks up running jobs again by PID.
