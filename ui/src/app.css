@@ -1,0 +1,115 @@
+/* The app's own layout rules: few, on top of @rhoe/tokens (layout.css) and @rhoe/ui. Components style themselves. */
+.app-page {
+  padding: var(--rh-space-6) max(var(--rh-space-6), env(safe-area-inset-right, 0px)) var(--rh-space-16) max(var(--rh-space-6), env(safe-area-inset-left, 0px));
+  max-width: 1440px;
+}
+@media (max-width: 899px) {
+  .app-page { padding: var(--rh-space-4) max(var(--rh-space-4), env(safe-area-inset-right, 0px)) var(--rh-space-12) max(var(--rh-space-4), env(safe-area-inset-left, 0px)); }
+}
+/* the heading that takes focus after a navigation is not a control: no ring */
+#rh-main h1[tabindex="-1"]:focus { outline: none; }
+
+.app-stack { display: grid; gap: var(--rh-space-6); min-width: 0; }
+.app-narrow { max-width: 960px; }
+.app-muted { margin: 0; color: var(--rh-text-muted); font-size: var(--rh-small-size); line-height: var(--rh-small-line); }
+.app-h2 { margin: 0; font-family: var(--rh-font-heading); font-size: var(--rh-h3-size); line-height: var(--rh-h3-line); font-weight: var(--rh-h3-weight); overflow-wrap: anywhere; }
+.app-h3 { margin: var(--rh-space-4) 0 var(--rh-space-1); font-family: var(--rh-font-heading); font-size: var(--rh-small-size); line-height: var(--rh-small-line); font-weight: var(--rh-h4-weight); }
+
+.app-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: var(--rh-space-4); }
+.app-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: var(--rh-space-4); }
+.app-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: var(--rh-space-4); align-items: start; }
+.app-period { min-width: min(100%, 280px); }
+
+.app-activity, .app-alerts, .app-links { display: grid; gap: var(--rh-space-3); margin: 0; padding: 0; list-style: none; font-size: var(--rh-small-size); line-height: var(--rh-small-line); }
+.app-activity li { display: grid; gap: 2px; padding-bottom: var(--rh-space-3); border-bottom: 1px solid var(--rh-border); overflow-wrap: anywhere; }
+.app-activity li:last-child { border-bottom: 0; padding-bottom: 0; }
+.app-activity time, .app-alerts time { color: var(--rh-text-muted); font-size: var(--rh-caption-size); }
+.app-alerts li { display: flex; gap: var(--rh-space-2); align-items: flex-start; overflow-wrap: anywhere; }
+.app-alerts svg { color: var(--rh-danger-text); flex-shrink: 0; margin-top: 2px; }
+.app-alerts { margin-bottom: var(--rh-space-3); }
+
+.app-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr)); gap: var(--rh-space-4); margin: 0; }
+.app-facts div { min-width: 0; }
+.app-facts dt { font-size: var(--rh-caption-size); line-height: var(--rh-caption-line); color: var(--rh-text-muted); }
+.app-facts dd { margin: 2px 0 0; font-size: var(--rh-small-size); line-height: var(--rh-small-line); font-weight: var(--rh-weight-medium); overflow-wrap: anywhere; }
+
+.app-form { display: grid; gap: var(--rh-space-6); min-width: 0; }
+.app-form-section { display: grid; gap: var(--rh-space-4); min-width: 0; }
+.app-form-section > h2, .app-form-section > h3 { margin: 0; font-family: var(--rh-font-heading); font-size: var(--rh-h4-size); line-height: var(--rh-h4-line); font-weight: var(--rh-h4-weight); }
+.app-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: var(--rh-space-5) var(--rh-space-4); align-items: start; }
+.app-form-actions { display: flex; flex-wrap: wrap; gap: var(--rh-space-3); padding-top: var(--rh-space-4); border-top: 1px solid var(--rh-border); }
+.app-inline-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--rh-space-3); }
+.app-inline-form > :first-child { flex: 1 1 220px; min-width: 0; }
+.app-field { display: grid; gap: var(--rh-space-2); }
+.app-label { font-size: var(--rh-small-size); line-height: var(--rh-small-line); font-weight: var(--rh-weight-semibold); }
+
+.app-tool { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: var(--rh-space-4); align-items: start; }
+@media (max-width: 1100px) { .app-tool { grid-template-columns: minmax(0, 1fr); } }
+
+.app-key { display: inline-flex; align-items: center; gap: var(--rh-space-2); }
+.app-key code { font-family: var(--rh-font-mono); font-size: var(--rh-caption-size); }
+/* a field label kept for screen readers only (a role select inside a table row named by its column) */
+.app-hidden-label label { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+.app-loading { display: grid; place-items: center; min-height: 100dvh; background: var(--rh-bg); }
+
+.app-switch-row { display: grid; gap: var(--rh-space-1); }
+.app-switch-row > p { padding-inline-start: 52px; }
+.app-nowrap { white-space: nowrap; }
+
+.app-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* map page: layer toggles, area mode and legend beside (or under) the map */
+.app-map-aside { display: grid; gap: var(--rh-space-5); align-content: start; min-width: 0; }
+.app-map-popup { display: grid; gap: var(--rh-space-2); justify-items: start; }
+.app-map-popup-text { margin: 0; font-size: var(--rh-small-size); line-height: var(--rh-small-line); }
+.app-map-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--rh-space-2) var(--rh-space-3); margin: 0; width: 100%; }
+.app-map-facts dt { font-size: var(--rh-caption-size); line-height: var(--rh-caption-line); color: var(--rh-text-muted); }
+.app-map-facts dd { margin: 0; font-size: var(--rh-small-size); line-height: var(--rh-small-line); font-weight: var(--rh-weight-medium); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+
+/* ATC: perimeter page. The map takes the space; the selection panel sits beside it from 1200 px, under it below. */
+.atc-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: var(--rh-space-4); align-items: start; }
+@media (max-width: 1199px) { .atc-layout { grid-template-columns: minmax(0, 1fr); } }
+.atc-map, .atc-panel { display: grid; gap: var(--rh-space-4); min-width: 0; }
+.atc-gap-4 { gap: var(--rh-space-4); }
+.atc-buttons { display: flex; flex-wrap: wrap; gap: var(--rh-space-2); }
+
+.atc-counts { display: flex; flex-wrap: wrap; gap: var(--rh-space-2) var(--rh-space-4); margin: 0; padding: 0; list-style: none; }
+.atc-counts li { display: inline-flex; align-items: center; gap: var(--rh-space-2); }
+.atc-count { font-weight: var(--rh-weight-semibold); font-variant-numeric: tabular-nums; }
+
+/* notes and problems: a coloured rule and the words (never colour alone) */
+.atc-messages { display: grid; gap: var(--rh-space-2); margin: 0; padding: 0; list-style: none; font-size: var(--rh-small-size); line-height: var(--rh-small-line); }
+.atc-messages li { padding: var(--rh-space-2) var(--rh-space-3); border-inline-start: 3px solid var(--rh-warning); background: var(--rh-surface-sunken); border-radius: var(--rh-radius-sm); overflow-wrap: anywhere; }
+.atc-messages li[data-tone="danger"] { border-inline-start-color: var(--rh-danger); }
+.atc-error { margin: 0; color: var(--rh-danger-text); font-size: var(--rh-small-size); line-height: var(--rh-small-line); }
+
+/* the phases of a light: index, signal string, duration, what it serves, its role */
+.atc-phases { display: grid; gap: 2px; font-size: var(--rh-small-size); line-height: var(--rh-small-line); }
+.atc-phase-what { display: grid; gap: 2px; min-width: 0; }
+/* the role select is named by its column and its own hidden label */
+.atc-hidden-label > [data-rac] > span:first-child { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.atc-phase { display: grid; grid-template-columns: 3ch minmax(0, 1fr) minmax(128px, 150px); gap: var(--rh-space-2); align-items: center; padding: var(--rh-space-1) 0; border-bottom: 1px solid var(--rh-border); }
+.atc-phase-head { font-size: var(--rh-caption-size); color: var(--rh-text-muted); border-bottom-color: var(--rh-border-strong); }
+.atc-phase:not([data-green]) { color: var(--rh-text-muted); }
+.atc-state { font-family: var(--rh-font-mono); font-size: var(--rh-caption-size); letter-spacing: 0.02em; overflow-wrap: anywhere; }
+.atc-state [data-ch="g"] { color: var(--rh-success-text); font-weight: var(--rh-weight-semibold); }
+.atc-state [data-ch="y"] { color: var(--rh-warning-text); }
+.atc-state [data-ch="r"] { color: var(--rh-text-muted); }
+
+.atc-progress-cell { min-width: 160px; }
+.atc-ids { margin: var(--rh-space-3) 0 0; font-family: var(--rh-font-mono); font-size: var(--rh-caption-size); overflow-wrap: anywhere; color: var(--rh-text-muted); }
+
+/* AntifragiCity brand in the sidebar. Workaround until rhoe-ui has a project logo slot (antifragicity-ui UPSTREAM.md,
+   "A project logo slot in the templates"): Sidebar draws the Rhoé logo itself, so hide it and show the AntifragiCity
+   logo (red on light, white on dark, the symbol when the sidebar is narrow). Shell.tsx sets --atc-logo (by theme) and --atc-logo-symbol.
+   Remove this when the slot is released. */
+[class*="AppShell-module-brandLink"] > svg { display: none; }
+[class*="AppShell-module-brandLink"]::before { content: ""; display: block; flex-shrink: 0; height: 22px; aspect-ratio: 3000 / 560; background: var(--atc-logo) no-repeat center / contain; }
+[class*="AppShell-module-narrow"] [class*="AppShell-module-brandLink"]::before { height: 28px; aspect-ratio: 1; background-image: var(--atc-logo-symbol); }
+[class*="AppShell-module-product"] { padding-inline-start: var(--rh-space-3); border-inline-start: 1px solid var(--rh-border-strong); font-family: var(--rh-font-heading); font-weight: 800; }
+
+/* the funding line at the foot of the sidebar (EU rules; the emblem file is still to be added) */
+[class*="AppShell-module-narrow"] .atc-funding { display: none; }
+.atc-funding { margin: 0; padding: 0 var(--rh-space-2); font-size: var(--rh-caption-size); line-height: var(--rh-caption-line); color: var(--rh-text-muted); }

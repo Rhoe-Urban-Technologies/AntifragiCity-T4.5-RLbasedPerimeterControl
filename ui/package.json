@@ -1,0 +1,44 @@
+{
+  "name": "suma-atc-ui",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SUMA Antifragile Traffic Control: choose Region A and its boundary traffic lights on a map, and start and follow ATC training jobs. On the Rhoé kit with the AntifragiCity theme (antifragicity-ui).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@antifragicity/theme": "file:../../antifragicity-ui/packages/theme",
+    "@fontsource/archivo": "^5.3.0",
+    "@fontsource/source-sans-3": "^5.3.1",
+    "@rhoe/data": "npm:@rhoe-urban-technologies/rhoe-data@^1.1.0",
+    "@rhoe/tokens": "npm:@rhoe-urban-technologies/rhoe-tokens@^1.1.0",
+    "@rhoe/ui": "npm:@rhoe-urban-technologies/rhoe-ui@^1.1.0",
+    "@tanstack/react-query": "^5.105.0",
+    "lucide-react": "^1.56.0",
+    "maplibre-gl": "^6.16.0",
+    "react": "^19.3.1",
+    "react-aria-components": "^1.22.1",
+    "react-dom": "^19.3.1",
+    "react-map-gl": "^8.1.3",
+    "react-router": "^8.5.1"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "10.4.2",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.3",
+    "@testing-library/user-event": "14.6.7",
+    "@types/geojson": "7946.0.16",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "jsdom": "30.1.2",
+    "typescript": "7.0.2",
+    "vite": "8.3.4",
+    "vitest": "5.0.4"
+  }
+}
