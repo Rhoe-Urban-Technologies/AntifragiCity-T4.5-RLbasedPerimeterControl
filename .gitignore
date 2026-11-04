@@ -5,3 +5,5 @@ outputs/
 *.pt
 replay_buffer.json
 *.log
+.idea
+**/.idea/
